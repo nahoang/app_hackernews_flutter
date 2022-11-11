@@ -129,7 +129,7 @@ class LoadingInfoState extends State<LoadingInfo> with TickerProviderStateMixin 
     // TODO: implement initState
     super.initState();
     _controller = AnimationController(vsync: this,
-      duration: Duration(seconds: 3)
+      duration: Duration(seconds: 1)
     );
   }
   @override
@@ -137,11 +137,16 @@ class LoadingInfoState extends State<LoadingInfo> with TickerProviderStateMixin 
     return StreamBuilder(
       stream:  widget._isLoading,
       builder: (BuildContext context, AsyncSnapshot<bool> snapshot) {
-        // if(snapshot.hasData && snapshot.data)
-        _controller.forward();
+        // if(snapshot.hasData && snapshot.data) {
+          _controller.forward().then((f) {
+            _controller.reverse();
+          });
+
           return FadeTransition(child: Icon(FontAwesomeIcons.hackerNewsSquare),
-            opacity: _controller,
+            opacity: Tween(begin: .5, end: 1.0).animate(CurvedAnimation(curve: Curves.easeIn, parent: _controller)),
           );
+        // }
+        // _controller.reverse();
         // return Container();
       },
     );
