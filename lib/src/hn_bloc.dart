@@ -20,7 +20,6 @@ class HackerNewsBloc {
   final _storiesTypeController = StreamController<StoriesType>();
 
   static List<int> _newIds = [
-
     17395675,
     17387438,
     17393560,
@@ -36,9 +35,11 @@ class HackerNewsBloc {
     17387851,
   ];
 
+  Stream<bool> get isLoading => _isLoadingSubject.stream;
+
+  final _isLoadingSubject = BehaviorSubject<bool>(seedValue: false);
+
   Stream<UnmodifiableListView<Article>> get articles => _articlesSubject.stream;
-
-
 
   HackerNewsBloc() {
     // _updateArticles(_topIds).then((_) {
@@ -56,10 +57,11 @@ class HackerNewsBloc {
     });
   }
 
-  _getArticlesAndUpdate(List<int> ids) {
-    _updateArticles(ids).then((_) {
-      _articlesSubject.add(UnmodifiableListView(_articles));
-    });
+  _getArticlesAndUpdate(List<int> ids) async {
+    _isLoadingSubject.add(true);
+    await _updateArticles(ids);
+    _articlesSubject.add(UnmodifiableListView(_articles));
+    _isLoadingSubject.add(false);
   }
 
   Future<Article> _getArticle(int id) async {
@@ -75,7 +77,4 @@ class HackerNewsBloc {
     final articles = await Future.wait(futureArticles);
     _articles = articles;
   }
-
-
-
 }
