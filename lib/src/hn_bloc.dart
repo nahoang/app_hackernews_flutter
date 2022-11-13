@@ -42,10 +42,6 @@ class HackerNewsBloc {
   Stream<UnmodifiableListView<Article>> get articles => _articlesSubject.stream;
 
   HackerNewsBloc() {
-    // _updateArticles(_topIds).then((_) {
-    //   _articlesSubject.add(UnmodifiableListView(_articles));
-    // });
-
     _getArticlesAndUpdate(_topIds);
 
     _storiesTypeController.stream.listen((storiesType) {
@@ -55,6 +51,10 @@ class HackerNewsBloc {
         _getArticlesAndUpdate(_topIds);
       }
     });
+  }
+
+  void close() {
+    _storiesTypeController.close();
   }
 
   _getArticlesAndUpdate(List<int> ids) async {
@@ -70,6 +70,7 @@ class HackerNewsBloc {
     if (storyRes.statusCode == 200) {
       return parseArticle(storyRes.body);
     }
+    throw HackerNewsApiError("Article $id could't be fetched. ");
   }
 
   Future<Null> _updateArticles(List<int> articleIds) async {
@@ -77,4 +78,10 @@ class HackerNewsBloc {
     final articles = await Future.wait(futureArticles);
     _articles = articles;
   }
+}
+
+class HackerNewsApiError extends Error {
+  final String message;
+
+  HackerNewsApiError(this.message);
 }
