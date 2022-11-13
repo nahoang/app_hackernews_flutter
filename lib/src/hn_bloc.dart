@@ -42,20 +42,33 @@ class HackerNewsBloc {
   Stream<UnmodifiableListView<Article>> get articles => _articlesSubject.stream;
 
   HackerNewsBloc() {
-    _getArticlesAndUpdate(_topIds);
+    _initializeArticles();
 
-    _storiesTypeController.stream.listen((storiesType) {
-      if (storiesType == StoriesType.newStories) {
-        _getArticlesAndUpdate(_newIds);
-      } else {
-        _getArticlesAndUpdate(_topIds);
-      }
+    _storiesTypeController.stream.listen((storiesType) async {
+      _getArticlesAndUpdate(await _getIds(storiesType));
     });
+  }
+
+  Future<void> _initializeArticles() async {
+    _getArticlesAndUpdate(await _getIds(StoriesType.topStories));
   }
 
   void close() {
     _storiesTypeController.close();
   }
+
+  Future<List<int>> _getIds(StoriesType type) async {
+    final partUrl = type == StoriesType.topStories ? 'top' : 'new';
+    final url = '$_baseUrl${partUrl}stories.json';
+    final response = await http.get(url);
+    if (response.statusCode != 200) {
+      throw HackerNewsApiError("Stories $type could't be fetched.");
+    }
+
+    return parseTopStories(response.body).take(10).toList();
+  }
+
+  static const _baseUrl = 'https://hacker-news.firebaseio.com/v0/';
 
   _getArticlesAndUpdate(List<int> ids) async {
     _isLoadingSubject.add(true);
@@ -65,7 +78,7 @@ class HackerNewsBloc {
   }
 
   Future<Article> _getArticle(int id) async {
-    final storyUrl = 'https://hacker-news.firebaseio.com/v0/item/$id.json';
+    final storyUrl = '${_baseUrl}item/$id.json';
     final storyRes = await http.get(storyUrl);
     if (storyRes.statusCode == 200) {
       return parseArticle(storyRes.body);
