@@ -11,6 +11,8 @@ enum StoriesType {
 }
 
 class HackerNewsBloc {
+
+  HashMap<int, Article> _cachedArticles;
   final _articlesSubject = BehaviorSubject<UnmodifiableListView<Article>>();
 
   var _articles = <Article>[];
@@ -19,22 +21,6 @@ class HackerNewsBloc {
 
   final _storiesTypeController = StreamController<StoriesType>();
 
-  static List<int> _newIds = [
-    17395675,
-    17387438,
-    17393560,
-    17391971,
-    17392455,
-  ];
-
-  static List<int> _topIds = [
-    17392995,
-    17397852,
-    17395342,
-    17385291,
-    17387851,
-  ];
-
   Stream<bool> get isLoading => _isLoadingSubject.stream;
 
   final _isLoadingSubject = BehaviorSubject<bool>(seedValue: false);
@@ -42,6 +28,7 @@ class HackerNewsBloc {
   Stream<UnmodifiableListView<Article>> get articles => _articlesSubject.stream;
 
   HackerNewsBloc() {
+    _cachedArticles = HashMap<int, Article>();
     _initializeArticles();
 
     _storiesTypeController.stream.listen((storiesType) async {
@@ -73,17 +60,23 @@ class HackerNewsBloc {
   _getArticlesAndUpdate(List<int> ids) async {
     _isLoadingSubject.add(true);
     await _updateArticles(ids);
+
     _articlesSubject.add(UnmodifiableListView(_articles));
     _isLoadingSubject.add(false);
   }
 
   Future<Article> _getArticle(int id) async {
-    final storyUrl = '${_baseUrl}item/$id.json';
-    final storyRes = await http.get(storyUrl);
-    if (storyRes.statusCode == 200) {
-      return parseArticle(storyRes.body);
+    if (!_cachedArticles.containsKey(id)) {
+      final storyUrl = '${_baseUrl}item/$id.json';
+      final storyRes = await http.get(storyUrl);
+      if (storyRes.statusCode == 200) {
+        _cachedArticles[id] = parseArticle(storyRes.body);
+      } else {
+        throw HackerNewsApiError("Article $id could't be fetched. ");
+      }
+
     }
-    throw HackerNewsApiError("Article $id could't be fetched. ");
+    return _cachedArticles[id];
   }
 
   Future<Null> _updateArticles(List<int> articleIds) async {
