@@ -1,52 +1,70 @@
 import 'dart:collection';
 
-import 'package:built_value/built_value.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:hn_app/src/article.dart';
 import 'package:hn_app/src/hn_bloc.dart';
+import 'package:hn_app/src/loading_info.dart';
+import 'package:hn_app/src/prefs_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 void main() {
   final hnBloc = HackerNewsBloc();
-  runApp(MyApp(bloc: hnBloc));
+  final prefsBloc = PrefsBloc();
+
+  runApp(MyApp(
+    hackerNewsBloc: hnBloc,
+    prefsBloc: prefsBloc,
+  ));
+  // TODO(filiph): DO WE CLOSE THE BLOCK SUBSCRIPTIONS HERE?!
 }
 
 class MyApp extends StatelessWidget {
-  final HackerNewsBloc bloc;
+  final HackerNewsBloc hackerNewsBloc;
+  final PrefsBloc prefsBloc;
 
   MyApp({
     Key key,
-    this.bloc,
+    this.hackerNewsBloc,
+    this.prefsBloc,
   }) : super(key: key);
 
   static const primaryColor = Colors.white;
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Flutter Demo',
       theme: ThemeData(
-        primaryColor: primaryColor,
-        scaffoldBackgroundColor: primaryColor,
-        canvasColor: Colors.black,
-        textTheme: Theme.of(context)
-          .textTheme
-          .copyWith(caption: TextStyle(color: Colors.white54))
-      ),
+          primaryColor: primaryColor,
+          scaffoldBackgroundColor: primaryColor,
+          canvasColor: Colors.black,
+          textTheme: Theme.of(context).textTheme.copyWith(
+              caption: TextStyle(color: Colors.white54),
+              subhead: TextStyle(fontFamily: 'Garamond', fontSize: 10.0))),
       home: MyHomePage(
-        title: 'Flutter Demo Home Page',
-        bloc: bloc,
+        title: 'Flutter Hacker News',
+        hackerNewsBloc: hackerNewsBloc,
+        prefsBloc: prefsBloc,
       ),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  final HackerNewsBloc bloc;
+  final HackerNewsBloc hackerNewsBloc;
+  final PrefsBloc prefsBloc;
 
   final String title;
 
-  MyHomePage({Key key, this.title, this.bloc}) : super(key: key);
+  MyHomePage({
+    Key key,
+    this.title,
+    this.hackerNewsBloc,
+    this.prefsBloc,
+  }) : super(key: key);
 
   @override
   _MyHomePageState createState() => _MyHomePageState();
@@ -59,44 +77,66 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        // title: Text(widget.title),
-        leading: LoadingInfo(widget.bloc.isLoading),
+        title: Text(widget.title),
+        leading: LoadingInfo(widget.hackerNewsBloc.isLoading),
         elevation: 0.0,
         actions: [
-          IconButton(
-            icon: Icon(Icons.search),
-            onPressed: () {
-              showSearch(context: context,
-                  delegate: ArticleSearch()
-              );
-            },
+          Builder(
+            builder: (context) => IconButton(
+              icon: Icon(Icons.search),
+              onPressed: () async {
+                final Article result = await showSearch(
+                  context: context,
+                  delegate: ArticleSearch(_currentIndex == 0
+                      ? widget.hackerNewsBloc.topArticles
+                      : widget.hackerNewsBloc.newArticles),
+                );
+                if (result != null) {
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => HackerNewsWebPage(result.url)));
+                }
+              },
+            ),
           ),
-
         ],
       ),
-      body: StreamBuilder<UnmodifiableListView<Article>>(
-        stream: widget.bloc.articles,
-        initialData: UnmodifiableListView<Article>([]),
-        builder: (context, snapshot) => ListView(
-          children: snapshot.data.map(_buildItem).toList(),
-        ),
-      ),
+      body: _currentIndex == 0
+          ? StreamBuilder<UnmodifiableListView<Article>>(
+              stream: widget.hackerNewsBloc.topArticles,
+              initialData: UnmodifiableListView<Article>([]),
+              builder: (context, snapshot) => ListView(
+                key: PageStorageKey(0),
+                children: snapshot.data.map(_buildItem).toList(),
+              ),
+            )
+          : StreamBuilder<UnmodifiableListView<Article>>(
+              stream: widget.hackerNewsBloc.newArticles,
+              initialData: UnmodifiableListView<Article>([]),
+              builder: (context, snapshot) => ListView(
+                key: PageStorageKey(1),
+                children: snapshot.data.map(_buildItem).toList(),
+              ),
+            ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         items: [
-          BottomNavigationBarItem(title: Text('Top Stories'),
+          BottomNavigationBarItem(
+            title: Text('Top Stories'),
             icon: Icon(Icons.arrow_drop_up),
           ),
-          BottomNavigationBarItem(title: Text('New Stories'),
+          BottomNavigationBarItem(
+            title: Text('New Stories'),
             icon: Icon(Icons.new_releases),
           ),
         ],
         onTap: (index) {
           if (index == 0) {
-            widget.bloc.storiesType.add(StoriesType.topStories);
+            widget.hackerNewsBloc.storiesType.add(StoriesType.topStories);
+          } else {
+            widget.hackerNewsBloc.storiesType.add(StoriesType.newStories);
           }
-          else
-            widget.bloc.storiesType.add(StoriesType.newStories);
           setState(() {
             _currentIndex = index;
           });
@@ -107,28 +147,52 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Widget _buildItem(Article article) {
     return Padding(
-      key: Key(article.title),
+      key: PageStorageKey(article.title),
       padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 12.0),
       child: ExpansionTile(
-
         title:
-        Text(article.title ?? '[null]', style: TextStyle(fontSize: 24.0)),
-        children: <Widget>[
+            Text(article.title ?? '[null]', style: TextStyle(fontSize: 24.0)),
+        children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              crossAxisAlignment: CrossAxisAlignment.center,
+            child: Column(
               children: <Widget>[
-                Text('${article.descendants} comments'),
-                SizedBox(width: 16.0),
-                IconButton(
-                  icon: Icon(Icons.launch),
-                  onPressed: () async {
-                    if (await canLaunch(article.url)) {
-                      launch(article.url);
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: <Widget>[
+                    Text('${article.descendants} comments'),
+                    SizedBox(width: 16.0),
+                    IconButton(
+                      icon: Icon(Icons.launch),
+                      onPressed: () async {
+                        Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (context) =>
+                                    HackerNewsWebPage(article.url)));
+                      },
+                    )
+                  ],
+                ),
+                StreamBuilder<PrefsState>(
+                  stream: widget.prefsBloc.currentPrefs,
+                  builder: (context, snapshot) {
+                    if (snapshot.data?.showWebView == true) {
+                      return Container(
+                        height: 200,
+                        child: WebView(
+                          javaScriptMode: JavaScriptMode.unrestricted,
+                          initialUrl: article.url,
+                          gestureRecognizers: Set()
+                            ..add(Factory<VerticalDragGestureRecognizer>(
+                                    () => VerticalDragGestureRecognizer())),
+                        ),
+                      );
+                    } else {
+                      return Container();
                     }
-                  },
+
+                  }
                 )
               ],
             ),
@@ -139,53 +203,20 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 }
 
-class LoadingInfo extends StatefulWidget {
-  final Stream<bool> _isLoading;
-
-  LoadingInfo(this._isLoading);
-  createState() => LoadingInfoState();
-}
-
-class LoadingInfoState extends State<LoadingInfo> with TickerProviderStateMixin {
-
-  AnimationController _controller;
-  @override
-  void initState() {
-    // TODO: implement initState
-    super.initState();
-    _controller = AnimationController(vsync: this,
-      duration: Duration(seconds: 1)
-    );
-  }
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder(
-      stream:  widget._isLoading,
-      builder: (BuildContext context, AsyncSnapshot<bool> snapshot) {
-        // if(snapshot.hasData && snapshot.data) {
-          _controller.forward().then((f) {
-            _controller.reverse();
-          });
-
-          return FadeTransition(child: Icon(FontAwesomeIcons.hackerNewsSquare),
-            opacity: Tween(begin: .5, end: 1.0).animate(CurvedAnimation(curve: Curves.easeIn, parent: _controller)),
-          );
-        // }
-        // _controller.reverse();
-        // return Container();
-      },
-    );
-  }
-}
-
 class ArticleSearch extends SearchDelegate<Article> {
+  final Stream<UnmodifiableListView<Article>> articles;
+
+  ArticleSearch(this.articles);
+
   @override
   List<Widget> buildActions(BuildContext context) {
     return [
-      IconButton(icon: Icon(Icons.clear),
-      onPressed: () {
-        query = '';
-      }),
+      IconButton(
+        icon: Icon(Icons.clear),
+        onPressed: () {
+          query = '';
+        },
+      ),
     ];
   }
 
@@ -201,13 +232,92 @@ class ArticleSearch extends SearchDelegate<Article> {
 
   @override
   Widget buildResults(BuildContext context) {
-    return Container();
+    return StreamBuilder<UnmodifiableListView<Article>>(
+      stream: articles,
+      builder:
+          (context, AsyncSnapshot<UnmodifiableListView<Article>> snapshot) {
+        if (!snapshot.hasData) {
+          return Center(
+              child: Text(
+            'No data!',
+          ));
+        }
+
+        final results = snapshot.data
+            .where((a) => a.title.toLowerCase().contains(query.toLowerCase()));
+
+        return ListView(
+          children: results
+              .map<ListTile>((a) => ListTile(
+                    title: Text(a.title,
+                        style: Theme.of(context)
+                            .textTheme
+                            .subhead
+                            .copyWith(fontSize: 16.0)),
+                    leading: Icon(Icons.book),
+                    onTap: () async {
+                      if (await canLaunch(a.url)) {
+                        await launch(a.url);
+                      }
+                      close(context, a);
+                    },
+                  ))
+              .toList(),
+        );
+      },
+    );
   }
 
   @override
   Widget buildSuggestions(BuildContext context) {
-    return Text(query);
+    return StreamBuilder<UnmodifiableListView<Article>>(
+      stream: articles,
+      builder:
+          (context, AsyncSnapshot<UnmodifiableListView<Article>> snapshot) {
+        if (!snapshot.hasData) {
+          return Center(
+              child: Text(
+            'No data!',
+          ));
+        }
+
+        final results = snapshot.data
+            .where((a) => a.title.toLowerCase().contains(query.toLowerCase()));
+
+        return ListView(
+          children: results
+              .map<ListTile>((a) => ListTile(
+                    title: Text(a.title,
+                        style: Theme.of(context).textTheme.subhead.copyWith(
+                              fontSize: 16.0,
+                              color: Colors.blue,
+                            )),
+                    onTap: () {
+                      close(context, a);
+                    },
+                  ))
+              .toList(),
+        );
+      },
+    );
   }
-  
 }
 
+class HackerNewsWebPage extends StatelessWidget {
+  HackerNewsWebPage(this.url);
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Web Page'),
+      ),
+      body: WebView(
+        initialUrl: url,
+        javaScriptMode: JavaScriptMode.unrestricted,
+      ),
+    );
+  }
+}

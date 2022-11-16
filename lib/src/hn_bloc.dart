@@ -2,67 +2,58 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:hn_app/src/article.dart';
-import 'package:rxdart/rxdart.dart';
 import 'package:http/http.dart' as http;
+import 'package:rxdart/rxdart.dart';
 
-enum StoriesType {
-  topStories,
-  newStories,
+class HackerNewsApiError extends Error {
+  final String message;
+
+  HackerNewsApiError(this.message);
 }
 
 class HackerNewsBloc {
-
   HashMap<int, Article> _cachedArticles;
-  final _articlesSubject = BehaviorSubject<UnmodifiableListView<Article>>();
-
-  var _articles = <Article>[];
-
-  Sink<StoriesType> get storiesType => _storiesTypeController.sink;
-
-  final _storiesTypeController = StreamController<StoriesType>();
-
-  Stream<bool> get isLoading => _isLoadingSubject.stream;
+  static const _baseUrl = 'https://hacker-news.firebaseio.com/v0/';
 
   final _isLoadingSubject = BehaviorSubject<bool>(seedValue: false);
 
-  Stream<UnmodifiableListView<Article>> get articles => _articlesSubject.stream;
+  final _topArticlesSubject = BehaviorSubject<UnmodifiableListView<Article>>();
+  final _newArticlesSubject = BehaviorSubject<UnmodifiableListView<Article>>();
+
+  var _articles = <Article>[];
+
+  final _storiesTypeController = StreamController<StoriesType>();
 
   HackerNewsBloc() {
     _cachedArticles = HashMap<int, Article>();
     _initializeArticles();
 
     _storiesTypeController.stream.listen((storiesType) async {
-      _getArticlesAndUpdate(await _getIds(storiesType));
+      _getArticlesAndUpdate(
+          _newArticlesSubject, await _getIds(StoriesType.newStories));
+      _getArticlesAndUpdate(
+          _topArticlesSubject, await _getIds(StoriesType.topStories));
     });
   }
 
+  Stream<UnmodifiableListView<Article>> get topArticles =>
+      _topArticlesSubject.stream;
+  Stream<UnmodifiableListView<Article>> get newArticles =>
+      _newArticlesSubject.stream;
+
+  Stream<bool> get isLoading => _isLoadingSubject.stream;
+
+  Sink<StoriesType> get storiesType => _storiesTypeController.sink;
+
   Future<void> _initializeArticles() async {
-    _getArticlesAndUpdate(await _getIds(StoriesType.topStories));
+    _getArticlesAndUpdate(
+        _newArticlesSubject, await _getIds(StoriesType.newStories));
+    _getArticlesAndUpdate(
+        _topArticlesSubject, await _getIds(StoriesType.topStories));
   }
 
   void close() {
     _storiesTypeController.close();
-  }
-
-  Future<List<int>> _getIds(StoriesType type) async {
-    final partUrl = type == StoriesType.topStories ? 'top' : 'new';
-    final url = '$_baseUrl${partUrl}stories.json';
-    final response = await http.get(url);
-    if (response.statusCode != 200) {
-      throw HackerNewsApiError("Stories $type could't be fetched.");
-    }
-
-    return parseTopStories(response.body).take(10).toList();
-  }
-
-  static const _baseUrl = 'https://hacker-news.firebaseio.com/v0/';
-
-  _getArticlesAndUpdate(List<int> ids) async {
-    _isLoadingSubject.add(true);
-    await _updateArticles(ids);
-
-    _articlesSubject.add(UnmodifiableListView(_articles));
-    _isLoadingSubject.add(false);
   }
 
   Future<Article> _getArticle(int id) async {
@@ -72,11 +63,29 @@ class HackerNewsBloc {
       if (storyRes.statusCode == 200) {
         _cachedArticles[id] = parseArticle(storyRes.body);
       } else {
-        throw HackerNewsApiError("Article $id could't be fetched. ");
+        throw HackerNewsApiError("Article $id couldn't be fetched.");
       }
-
     }
     return _cachedArticles[id];
+  }
+
+  _getArticlesAndUpdate(BehaviorSubject<UnmodifiableListView<Article>> subject,
+      List<int> ids) async {
+    _isLoadingSubject.add(true);
+    await _updateArticles(ids);
+
+    subject.add(UnmodifiableListView(_articles));
+    _isLoadingSubject.add(false);
+  }
+
+  Future<List<int>> _getIds(StoriesType type) async {
+    final partUrl = type == StoriesType.topStories ? 'top' : 'new';
+    final url = '$_baseUrl${partUrl}stories.json';
+    final response = await http.get(url);
+    if (response.statusCode != 200) {
+      throw HackerNewsApiError("Stories $type couldn't be fetched.");
+    }
+    return parseTopStories(response.body).take(10).toList();
   }
 
   Future<Null> _updateArticles(List<int> articleIds) async {
@@ -86,8 +95,7 @@ class HackerNewsBloc {
   }
 }
 
-class HackerNewsApiError extends Error {
-  final String message;
-
-  HackerNewsApiError(this.message);
+enum StoriesType {
+  topStories,
+  newStories,
 }
