@@ -130,12 +130,20 @@ class _MyHomePageState extends State<MyHomePage> {
             title: Text('New Stories'),
             icon: Icon(Icons.new_releases),
           ),
+          BottomNavigationBarItem(
+            title: Text('Preferences'),
+            icon: Icon(Icons.settings),
+          ),
         ],
         onTap: (index) {
           if (index == 0) {
             widget.hackerNewsBloc.storiesType.add(StoriesType.topStories);
-          } else {
+          }
+          if (index == 1) {
             widget.hackerNewsBloc.storiesType.add(StoriesType.newStories);
+          } else {
+            //Show our prefs
+            _showPrefsSheet(context, widget.prefsBloc);
           }
           setState(() {
             _currentIndex = index;
@@ -143,6 +151,21 @@ class _MyHomePageState extends State<MyHomePage> {
         },
       ),
     );
+  }
+
+  void _showPrefsSheet(BuildContext context, PrefsBloc bloc) async {
+    showModalBottomSheet(
+        context: context,
+        builder: (context) {
+          return Scaffold(
+              body: Center(
+            child: StreamBuilder<PrefsState>(
+                stream: bloc.currentPrefs,
+                builder: (context, AsyncSnapshot<PrefsState> snapshot) {
+                  return snapshot.hasData ? Switch(value: snapshot.data.showWebView, onChanged: (b) =>  bloc.showWebView.add(b),) : Text('Nothign');
+                }),
+          ));
+        });
   }
 
   Widget _buildItem(Article article) {
@@ -175,25 +198,23 @@ class _MyHomePageState extends State<MyHomePage> {
                   ],
                 ),
                 StreamBuilder<PrefsState>(
-                  stream: widget.prefsBloc.currentPrefs,
-                  builder: (context, snapshot) {
-                    if (snapshot.data?.showWebView == true) {
-                      return Container(
-                        height: 200,
-                        child: WebView(
-                          javaScriptMode: JavaScriptMode.unrestricted,
-                          initialUrl: article.url,
-                          gestureRecognizers: Set()
-                            ..add(Factory<VerticalDragGestureRecognizer>(
-                                    () => VerticalDragGestureRecognizer())),
-                        ),
-                      );
-                    } else {
-                      return Container();
-                    }
-
-                  }
-                )
+                    stream: widget.prefsBloc.currentPrefs,
+                    builder: (context, snapshot) {
+                      if (snapshot.data?.showWebView == true) {
+                        return Container(
+                          height: 200,
+                          child: WebView(
+                            javaScriptMode: JavaScriptMode.unrestricted,
+                            initialUrl: article.url,
+                            gestureRecognizers: Set()
+                              ..add(Factory<VerticalDragGestureRecognizer>(
+                                  () => VerticalDragGestureRecognizer())),
+                          ),
+                        );
+                      } else {
+                        return Container();
+                      }
+                    })
               ],
             ),
           ),
