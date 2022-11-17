@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/rendering.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -13,36 +11,37 @@ class PrefsBlocError extends Error {
 
 class PrefsState {
   final bool showWebView;
+
   const PrefsState(this.showWebView);
 }
 
 class PrefsBloc {
-  final _currentPrefs = BehaviorSubject<PrefsState>(seedValue: PrefsState(false));
+  final _currentPrefs = BehaviorSubject<PrefsState>(
+    seedValue: PrefsState(true),
+  );
 
-  final _showViewPref = StreamController<bool>();
+  final _showWebViewPref = StreamController<bool>();
 
   PrefsBloc() {
     _loadSharedPrefs();
-    _showViewPref.stream.listen((bool) {
+    _showWebViewPref.stream.listen((bool) {
       _saveNewPrefs(PrefsState(bool));
     });
   }
 
   Stream<PrefsState> get currentPrefs => _currentPrefs.stream;
 
-  Sink<bool> get showWebView => _showViewPref.sink;
+  Sink<bool> get showWebViewPref => _showWebViewPref.sink;
 
   void close() {
-    _showViewPref.close();
+    _showWebViewPref.close();
     _currentPrefs.close();
   }
 
-  Future<void> _loadSharedPrefs()  async {
+  Future<void> _loadSharedPrefs() async {
     final sharedPrefs = await SharedPreferences.getInstance();
-    final sharedWebView = sharedPrefs.getBool('showWebView') ?? true;
-    _currentPrefs.add(PrefsState(sharedWebView));
-    // await Future.delayed(Duration(seconds: 10), () {});
-    // _currentPrefs.add(PrefsState(false));
+    final showWebView = sharedPrefs.getBool('showWebView') ?? true;
+    _currentPrefs.add(PrefsState(showWebView));
   }
 
   Future<void> _saveNewPrefs(PrefsState newState) async {
@@ -50,5 +49,4 @@ class PrefsBloc {
     await sharedPrefs.setBool('showWebView', newState.showWebView);
     _currentPrefs.add(newState);
   }
-
 }
