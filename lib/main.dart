@@ -11,24 +11,19 @@ import 'package:hn_app/src/widgets/headline.dart';
 import 'package:hn_app/src/widgets/search.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
-void main() {
-  var hnBloc = HackerNewsBloc();
-  var prefsBloc = PrefsBloc();
+import 'package:provider/provider.dart';
 
-  runApp(MyApp(
-    hackerNewsBloc: hnBloc,
-    prefsBloc: prefsBloc,
-  ));
+void main() {
+  runApp(MultiProvider(providers: [
+    Provider(builder: (context) => HackerNewsBloc()),
+    Provider(builder: (context) => PrefsBloc()),
+  ], child: MyApp()));
 }
 
 class MyApp extends StatelessWidget {
-  final HackerNewsBloc hackerNewsBloc;
-  final PrefsBloc prefsBloc;
 
   MyApp({
     Key key,
-    this.hackerNewsBloc,
-    this.prefsBloc,
   }) : super(key: key);
 
   static const primaryColor = Colors.white;
@@ -44,10 +39,7 @@ class MyApp extends StatelessWidget {
           textTheme: Theme.of(context).textTheme.copyWith(
               caption: TextStyle(color: Colors.white54),
               subhead: TextStyle(fontFamily: 'Garamond', fontSize: 10.0))),
-      home: MyHomePage(
-        hackerNewsBloc: hackerNewsBloc,
-        prefsBloc: prefsBloc,
-      ),
+      home: MyHomePage(),
     );
   }
 }
@@ -77,7 +69,7 @@ class _MyHomePageState extends State<MyHomePage> {
           text: _currentIndex == 0 ? 'Top Stories' : 'New Stories',
           index: _currentIndex,
         ),
-        leading: LoadingInfo(widget.hackerNewsBloc.isLoading),
+        leading: LoadingInfo(),
         elevation: 0.0,
         actions: [
           IconButton(
@@ -86,8 +78,8 @@ class _MyHomePageState extends State<MyHomePage> {
               var result = await showSearch(
                 context: context,
                 delegate: ArticleSearch(_currentIndex == 0
-                    ? widget.hackerNewsBloc.topArticles
-                    : widget.hackerNewsBloc.newArticles),
+                    ? Provider.of<HackerNewsBloc>(context).topArticles
+                    : Provider.of<HackerNewsBloc>(context).newArticles),
               );
               if (result != null) {
                 Navigator.push(
@@ -101,16 +93,16 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       body: StreamBuilder<UnmodifiableListView<Article>>(
         stream: _currentIndex == 0
-            ? widget.hackerNewsBloc.topArticles
-            : widget.hackerNewsBloc.newArticles,
+            ? Provider.of<HackerNewsBloc>(context).topArticles
+            : Provider.of<HackerNewsBloc>(context).newArticles,
         initialData: UnmodifiableListView<Article>([]),
         builder: (context, snapshot) => ListView(
           key: PageStorageKey(_currentIndex),
           children: snapshot.data
               .map((a) => _Item(
-            article: a,
-            prefsBloc: widget.prefsBloc,
-          ))
+                    article: a,
+                    prefsBloc: Provider.of<PrefsBloc>(context),
+                  ))
               .toList(),
         ),
       ),
@@ -128,10 +120,10 @@ class _MyHomePageState extends State<MyHomePage> {
         ],
         onTap: (index) {
           if (index == 0) {
-            widget.hackerNewsBloc.storiesType.add(StoriesType.topStories);
+            Provider.of<HackerNewsBloc>(context).storiesType.add(StoriesType.topStories);
           } else {
             assert(index == 1);
-            widget.hackerNewsBloc.storiesType.add(StoriesType.newStories);
+            Provider.of<HackerNewsBloc>(context).storiesType.add(StoriesType.newStories);
           }
           setState(() {
             _currentIndex = index;
@@ -200,7 +192,7 @@ class _Item extends StatelessWidget {
                           initialUrl: article.url,
                           gestureRecognizers: Set()
                             ..add(Factory<VerticalDragGestureRecognizer>(
-                                    () => VerticalDragGestureRecognizer())),
+                                () => VerticalDragGestureRecognizer())),
                         ),
                       );
                     } else {
