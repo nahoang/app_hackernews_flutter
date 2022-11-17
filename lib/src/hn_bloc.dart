@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:collection';
 
+import 'package:flutter/cupertino.dart';
 import 'package:hn_app/src/article.dart';
 import 'package:http/http.dart' as http;
 import 'package:rxdart/rxdart.dart';
+
 
 class HackerNewsApiError extends Error {
   final String message;
@@ -11,49 +13,50 @@ class HackerNewsApiError extends Error {
   HackerNewsApiError(this.message);
 }
 
-class HackerNewsBloc {
-  HashMap<int, Article> _cachedArticles;
+
+class HackerNewsNotifier with ChangeNotifier {
+  Map<int, Article> _cachedArticles;
   static const _baseUrl = 'https://hacker-news.firebaseio.com/v0/';
 
   final _isLoadingSubject = BehaviorSubject<bool>(seedValue: false);
 
-  final _topArticlesSubject = BehaviorSubject<UnmodifiableListView<Article>>();
-  final _newArticlesSubject = BehaviorSubject<UnmodifiableListView<Article>>();
+  bool _isLoading = false;
+  bool get isLoading => _isLoading;
 
-  var _articles = <Article>[];
+  List<Article> _topArticles = [];
+  UnmodifiableListView<Article> get topArticles => UnmodifiableListView(_topArticles);
 
-  final _storiesTypeController = StreamController<StoriesType>();
+  List<Article> _newArticles = [];
+  UnmodifiableListView<Article> get newArticles => UnmodifiableListView(_newArticles);
 
-  HackerNewsBloc() {
-    _cachedArticles = HashMap<int, Article>();
-    _initializeArticles();
+  List<Article> _articles = [];
+  UnmodifiableListView<Article> get articles => UnmodifiableListView(_articles);
 
-    _storiesTypeController.stream.listen((storiesType) async {
-      _getArticlesAndUpdate(
-          _newArticlesSubject, await _getIds(StoriesType.newStories));
-      _getArticlesAndUpdate(
-          _topArticlesSubject, await _getIds(StoriesType.topStories));
-    });
+  StoriesType _storiesType;
+  StoriesType get storiesType => _storiesType;
+
+  HackerNewsNotifier() : _cachedArticles = Map() {
+    getStoriesByType(StoriesType.topStories);
   }
 
-  Stream<UnmodifiableListView<Article>> get topArticles =>
-      _topArticlesSubject.stream;
-  Stream<UnmodifiableListView<Article>> get newArticles =>
-      _newArticlesSubject.stream;
+  Future<void> getStoriesByType(StoriesType type) async {
+    _isLoading = true;
+    notifyListeners();
 
-  Stream<bool> get isLoading => _isLoadingSubject.stream;
+    final ids = await _getIds(type);
+    _articles = await _updateArticles(ids);
 
-  Sink<StoriesType> get storiesType => _storiesTypeController.sink;
+    switch(type) {
+      case StoriesType.topStories:
+        _topArticles = _articles;
+        break;
+      case StoriesType.newStories:
+        _newArticles = _articles;
+        break;
+    }
 
-  Future<void> _initializeArticles() async {
-    _getArticlesAndUpdate(
-        _newArticlesSubject, await _getIds(StoriesType.newStories));
-    _getArticlesAndUpdate(
-        _topArticlesSubject, await _getIds(StoriesType.topStories));
-  }
-
-  void close() {
-    _storiesTypeController.close();
+    _isLoading = false;
+    notifyListeners();
   }
 
   Future<Article> _getArticle(int id) async {
@@ -69,15 +72,6 @@ class HackerNewsBloc {
     return _cachedArticles[id];
   }
 
-  _getArticlesAndUpdate(BehaviorSubject<UnmodifiableListView<Article>> subject,
-      List<int> ids) async {
-    _isLoadingSubject.add(true);
-    await _updateArticles(ids);
-
-    subject.add(UnmodifiableListView(_articles));
-    _isLoadingSubject.add(false);
-  }
-
   Future<List<int>> _getIds(StoriesType type) async {
     final partUrl = type == StoriesType.topStories ? 'top' : 'new';
     final url = '$_baseUrl${partUrl}stories.json';
@@ -88,10 +82,18 @@ class HackerNewsBloc {
     return parseTopStories(response.body).take(10).toList();
   }
 
-  Future<Null> _updateArticles(List<int> articleIds) async {
+  Future<void> _initializeArticles() async {
+    final ids = await _getIds(StoriesType.topStories);
+    _topArticles = _articles = await _updateArticles(ids);
+    notifyListeners();
+  }
+
+  Future<List<Article>> _updateArticles(List<int> articleIds) async {
     final futureArticles = articleIds.map((id) => _getArticle(id));
-    final articles = await Future.wait(futureArticles);
-    _articles = articles;
+    var all = await Future.wait((futureArticles));
+    var filtered = all.where((a) => a.title  != null).toList();
+
+    return filtered;
   }
 }
 

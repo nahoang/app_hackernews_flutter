@@ -20,19 +20,15 @@ class LoadingInfoState extends State<LoadingInfo>
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<HackerNewsBloc>(
-      builder: (context, bloc, child) => StreamBuilder(
-          stream: bloc.isLoading,
-          builder: (BuildContext context, AsyncSnapshot<bool> snapshot) {
-            _controller.forward().then((_) {
-              _controller.reverse();
-            });
-            return FadeTransition(
-              child: Icon(FontAwesomeIcons.hackerNewsSquare),
-              opacity: Tween(begin: .5, end: 1.0).animate(
-                  CurvedAnimation(curve: Curves.easeIn, parent: _controller)),
-            );
-          }),
-    );
+    return Consumer<HackerNewsNotifier>(builder: (context, bloc, child) {
+      _controller.forward().then((_) {
+        _controller.reverse();
+      });
+      return FadeTransition(
+        child: Icon(FontAwesomeIcons.hackerNewsSquare),
+        opacity: Tween(begin: .5, end: 1.0).animate(
+            CurvedAnimation(curve: Curves.easeIn, parent: _controller)),
+      );
+    });
   }
 }
