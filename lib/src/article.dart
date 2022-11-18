@@ -8,6 +8,8 @@ import 'serializers.dart';
 
 part 'article.g.dart';
 
+/// Note: If changing this file, see readme for how to regenerate
+/// serialization code.
 abstract class Article implements Built<Article, ArticleBuilder> {
   static Serializer<Article> get serializer => _$articleSerializer;
 
@@ -59,14 +61,13 @@ abstract class Article implements Built<Article, ArticleBuilder> {
 }
 
 List<int> parseTopStories(String jsonStr) {
-  final parsed = json.jsonDecode(jsonStr);
-  final listOfIds = List<int>.from(parsed);
+  var parsed = json.jsonDecode(jsonStr);
+  var listOfIds = List<int>.from(parsed);
   return listOfIds;
 }
 
 Article parseArticle(String jsonStr) {
-  final parsed = json.jsonDecode(jsonStr);
-  Article article =
-      standardSerializers.deserializeWith(Article.serializer, parsed);
+  var parsed = json.jsonDecode(jsonStr);
+  var article = standardSerializers.deserializeWith(Article.serializer, parsed);
   return article;
 }

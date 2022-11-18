@@ -1,32 +1,38 @@
-import 'dart:collection';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:hn_app/src/article.dart';
-import 'package:hn_app/src/hn_bloc.dart';
-import 'package:hn_app/src/loading_info.dart';
-import 'package:hn_app/src/prefs_bloc.dart';
+import 'package:hn_app/src/notifiers/hn_api.dart';
+import 'package:hn_app/src/notifiers/prefs.dart';
 import 'package:hn_app/src/widgets/headline.dart';
-// import 'package:hn_app/src/widgets/search.dart';
+import 'package:hn_app/src/widgets/loading_info.dart';
+import 'package:hn_app/src/widgets/search.dart';
+import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
-import 'package:provider/provider.dart';
-
 void main() {
-  runApp(MultiProvider(providers: [
-    ValueListenableProvider(builder: (_) => ValueNotifier(true)),
-    ChangeNotifierProvider(builder: (_) => HackerNewsNotifier()),
-    Provider(builder: (_) => PrefsBloc()),
-  ], child: MyApp()));
+  runApp(
+    MultiProvider(
+      providers: [
+        Provider<LoadingTabsCount>(
+          builder: (_) => LoadingTabsCount(),
+          dispose: (_, value) => value.dispose(),
+        ),
+        ChangeNotifierProvider(
+          builder: (context) => HackerNewsNotifier(
+                // TODO(filiph): revisit when ProxyProvider lands
+                // https://github.com/rrousselGit/provider/issues/46
+                Provider.of<LoadingTabsCount>(context, listen: false),
+              ),
+        ),
+        ChangeNotifierProvider(builder: (_) => PrefsNotifier()),
+      ],
+      child: MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
-
-  MyApp({
-    Key key,
-  }) : super(key: key);
-
   static const primaryColor = Colors.white;
 
   @override
@@ -46,88 +52,91 @@ class MyApp extends StatelessWidget {
 }
 
 class MyHomePage extends StatefulWidget {
-  final HackerNewsNotifier hackerNewsBloc;
-  final PrefsBloc prefsBloc;
-
-  MyHomePage({
-    Key key,
-    this.hackerNewsBloc,
-    this.prefsBloc,
-  }) : super(key: key);
-
   @override
   _MyHomePageState createState() => _MyHomePageState();
 }
 
 class _MyHomePageState extends State<MyHomePage> {
   int _currentIndex = 0;
+  final PageController _pageController = PageController();
+
+  @override
+  void initState() {
+    _pageController.addListener(_handlePageChange);
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    _pageController.removeListener(_handlePageChange);
+    super.dispose();
+  }
+
+  void _handlePageChange() {
+    setState(() {
+      _currentIndex = _pageController.page.round();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final hn = Provider.of<HackerNewsNotifier>(context);
+    final tabs = hn.tabs;
+    final current = tabs[_currentIndex];
+
+    if (current.articles.isEmpty && !current.isLoading) {
+      // New tab with no data. Let's fetch some.
+      current.refresh();
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Headline(
-          text: _currentIndex == 0 ? 'Top Stories' : 'New Stories',
+          text: tabs[_currentIndex].name,
           index: _currentIndex,
         ),
-        leading: LoadingInfo(),
+        leading: Consumer<LoadingTabsCount>(
+            builder: (context, loading, child) => LoadingInfo(loading)),
         elevation: 0.0,
         actions: [
-          // IconButton(
-          //   icon: Icon(Icons.search),
-          //   onPressed: () async {
-          //     var result = await showSearch(
-          //       context: context,
-          //       delegate: ArticleSearch(_currentIndex == 0
-          //           ? Provider.of<HackerNewsNotifier>(context).topArticles
-          //           : Provider.of<HackerNewsNotifier>(context).newArticles),
-          //     );
-          //     if (result != null) {
-          //       Navigator.push(
-          //           context,
-          //           MaterialPageRoute(
-          //               builder: (context) => HackerNewsWebPage(result.url)));
-          //     }
-          //   },
-          // ),
+          IconButton(
+            icon: Icon(Icons.search),
+            onPressed: () async {
+              var result = await showSearch(
+                context: context,
+                delegate: ArticleSearch(hn.allArticles),
+              );
+              if (result != null) {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => HackerNewsWebPage(result.url)));
+              }
+            },
+          ),
         ],
       ),
-      body: Consumer<HackerNewsNotifier>(
-        builder: (context, bloc, child) => ListView(
-          key: PageStorageKey(_currentIndex),
-          children: bloc.articles
-              .map((a) => _Item(
-                    article: a,
-                    prefsBloc: Provider.of<PrefsBloc>(context),
-                  ))
-              .toList(),
-        ),
-      ),
-      floatingActionButton: Consumer<bool>(
-        builder: (context, isLoading, child) => FloatingActionButton(
-          onPressed: () {},
-          child: Icon(Icons.shop, color: isLoading ? Colors.yellowAccent : Colors.green),
-        ),
+      body: PageView.builder(
+        controller: _pageController,
+        itemCount: tabs.length,
+        itemBuilder: (context, index) => ChangeNotifierProvider.value(
+              notifier: tabs[index],
+              child: _TabPage(index),
+            ),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         items: [
-          BottomNavigationBarItem(
-            title: Text('Top Stories'),
-            icon: Icon(Icons.arrow_drop_up),
-          ),
-          BottomNavigationBarItem(
-            title: Text('New Stories'),
-            icon: Icon(Icons.new_releases),
-          ),
+          for (final tab in tabs)
+            BottomNavigationBarItem(
+              title: Text(tab.name),
+              icon: Icon(tab.icon),
+            )
         ],
         onTap: (index) {
-          if (index == 0) {
-            Provider.of<HackerNewsNotifier>(context).getStoriesByType(StoriesType.topStories);
-          } else {
-            assert(index == 1);
-            Provider.of<HackerNewsNotifier>(context).getStoriesByType(StoriesType.newStories);
-          }
+          _pageController.animateToPage(index,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic);
           setState(() {
             _currentIndex = index;
           });
@@ -139,16 +148,18 @@ class _MyHomePageState extends State<MyHomePage> {
 
 class _Item extends StatelessWidget {
   final Article article;
-  final PrefsBloc prefsBloc;
+  final PrefsNotifier prefs;
 
   const _Item({
     Key key,
     @required this.article,
-    @required this.prefsBloc,
+    @required this.prefs,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    final prefs = Provider.of<PrefsNotifier>(context);
+
     assert(article.title != null);
     return Padding(
       key: PageStorageKey(article.title),
@@ -165,12 +176,12 @@ class _Item extends StatelessWidget {
                   children: <Widget>[
                     FlatButton(
                       onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (BuildContext context) =>
-                              HackerNewsCommentPage(article.id),
-                        ),
-                      ),
+                            context,
+                            MaterialPageRoute(
+                              builder: (BuildContext context) =>
+                                  HackerNewsCommentPage(article.id),
+                            ),
+                          ),
                       child: Text('${article.descendants} comments'),
                     ),
                     SizedBox(width: 16.0),
@@ -184,28 +195,56 @@ class _Item extends StatelessWidget {
                     )
                   ],
                 ),
-                StreamBuilder<PrefsState>(
-                  stream: prefsBloc.currentPrefs,
-                  builder: (context, snapshot) {
-                    if (snapshot.data?.showWebView == true) {
-                      return Container(
+                prefs.showWebView
+                    ? Container(
                         height: 200,
                         child: WebView(
-                          javaScriptMode: JavaScriptMode.unrestricted,
+                          javascriptMode: JavascriptMode.unrestricted,
                           initialUrl: article.url,
                           gestureRecognizers: Set()
                             ..add(Factory<VerticalDragGestureRecognizer>(
                                 () => VerticalDragGestureRecognizer())),
                         ),
-                      );
-                    } else {
-                      return Container();
-                    }
-                  },
-                ),
+                      )
+                    : Container(),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TabPage extends StatelessWidget {
+  final int index;
+
+  _TabPage(this.index, {Key key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final tab = Provider.of<HackerNewsTab>(context);
+    final articles = tab.articles;
+    final prefs = Provider.of<PrefsNotifier>(context);
+
+    if (tab.isLoading && articles.isEmpty) {
+      return Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    return RefreshIndicator(
+      color: Colors.white,
+      backgroundColor: Colors.black,
+      onRefresh: () => tab.refresh(),
+      child: ListView(
+        key: PageStorageKey(index),
+        children: [
+          for (final article in articles)
+            _Item(
+              article: article,
+              prefs: prefs,
+            )
         ],
       ),
     );
@@ -225,7 +264,7 @@ class HackerNewsWebPage extends StatelessWidget {
       ),
       body: WebView(
         initialUrl: url,
-        javaScriptMode: JavaScriptMode.unrestricted,
+        javascriptMode: JavascriptMode.unrestricted,
       ),
     );
   }
@@ -243,8 +282,8 @@ class HackerNewsCommentPage extends StatelessWidget {
         title: Text('Comments'),
       ),
       body: WebView(
-        initialUrl: 'https://news.ycombinator.com/item?id=${id}',
-        javaScriptMode: JavaScriptMode.unrestricted,
+        initialUrl: 'https://news.ycombinator.com/item?id=$id',
+        javascriptMode: JavascriptMode.unrestricted,
       ),
     );
   }
