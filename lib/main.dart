@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:hn_app/src/article.dart';
+import 'package:hn_app/src/favorites.dart';
 import 'package:hn_app/src/notifiers/hn_api.dart';
 import 'package:hn_app/src/notifiers/prefs.dart';
 import 'package:hn_app/src/widgets/headline.dart';
@@ -18,6 +19,7 @@ void main() {
           builder: (_) => LoadingTabsCount(),
           dispose: (_, value) => value.dispose(),
         ),
+        Provider<MyDatabase>(builder: (_) => MyDatabase()),
         ChangeNotifierProvider(
           builder: (context) => HackerNewsNotifier(
                 // TODO(filiph): revisit when ProxyProvider lands
@@ -76,6 +78,10 @@ class _MyHomePageState extends State<MyHomePage> {
     setState(() {
       _currentIndex = _pageController.page.round();
     });
+  }
+
+  printEverything(BuildContext context) async {
+    print(await Provider.of<MyDatabase>(context).allFavorites);
   }
 
   @override
@@ -159,12 +165,22 @@ class _Item extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final prefs = Provider.of<PrefsNotifier>(context);
+    var myDatabase = Provider.of<MyDatabase>(context);
 
     assert(article.title != null);
     return Padding(
       key: PageStorageKey(article.title),
       padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 12.0),
       child: ExpansionTile(
+        leading: StreamBuilder<bool>(
+          stream: myDatabase.isFavorite(article.id),
+          builder: (context, snapshot) {
+            if (snapshot.hasData && snapshot.data) {
+              return IconButton(icon:Icon(Icons.star), onPressed: () => myDatabase.removeFavorite(article.id),);
+            }
+            return IconButton(icon:Icon(Icons.star_border), onPressed: () => myDatabase.addFavorite(article),);
+          }
+        ),
         title: Text(article.title, style: TextStyle(fontSize: 24.0)),
         children: [
           Padding(
